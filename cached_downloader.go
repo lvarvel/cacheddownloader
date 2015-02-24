@@ -7,11 +7,8 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
-	"runtime"
 	"sync"
-	"syscall"
 	"time"
-	"unsafe"
 )
 
 // called after a new object has entered the cache.
@@ -25,41 +22,8 @@ type CachedDownloader interface {
 	Fetch(urlToFetch *url.URL, cacheKey string, transformer CacheTransformer, cancelChan <-chan struct{}) (io.ReadCloser, int64, error)
 }
 
-func windowsSafeRename(source string, destination string) error {
-	kernel32, err := syscall.LoadLibrary("kernel32.dll")
-	if err != nil {
-		return err
-	}
-	defer syscall.FreeLibrary(kernel32)
-	moveFileExUnicode, err := syscall.GetProcAddress(kernel32, "MoveFileExW")
-	if err != nil {
-		return err
-	}
-
-	sourceString := syscall.StringToUTF16Ptr(source)
-	destinationString := syscall.StringToUTF16Ptr(destination)
-
-	sourcePtr := uintptr(unsafe.Pointer(sourceString))
-	destinationPtr := uintptr(unsafe.Pointer(destinationString))
-
-	MOVEFILE_REPLACE_EXISTING := 0x1
-	flag := uintptr(MOVEFILE_REPLACE_EXISTING)
-
-	if _, _, callErr := syscall.Syscall(uintptr(moveFileExUnicode), 3, sourcePtr, destinationPtr, flag); callErr != 0 {
-		return callErr
-	}
-
-	return nil
-}
-
 func NoopTransform(source string, destination string) (int64, error) {
-	var err error
-	if runtime.GOOS == "windows" {
-		err = windowsSafeRename(source, destination)
-	} else {
-		err = os.Rename(source, destination)
-	}
-
+	err := Replace(source, destination)
 	if err != nil {
 		return 0, err
 	}
